@@ -1,15 +1,18 @@
 ﻿using Conesoft.Files;
 using Humanizer;
+using Microsoft.AspNetCore.Http.Extensions;
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Text;
 
 var configuration = new ConfigurationBuilder().AddJsonFile(Conesoft.Hosting.Host.GlobalSettings.Path).Build();
 var conesoftSecret = configuration["conesoft:secret"] ?? throw new Exception("Conesoft Secret not found in Configuration");
 
 var client = new HttpClient();
-Stopwatch stopwatch = new Stopwatch();
+var stopwatch = new Stopwatch();
+var stringbuilder = new StringBuilder();
 
-var timer = new PeriodicTimer(TimeSpan.FromHours(1));
+var timer = new PeriodicTimer(TimeSpan.FromHours(6));
 
 var settings = Conesoft.Hosting.Host.LocalSettings;
 var storage = Conesoft.Hosting.Host.GlobalStorage / "FromSources" / "IMDb";
@@ -34,24 +37,17 @@ do
     {
         s.Local.Parent.Create();
 
-        if (DateTime.UtcNow - s.Local.Info.CreationTimeUtc > TimeSpan.FromDays(1))
-        {
-            s.Local.Delete();
-            s.LocalZipped.Delete();
-        }
-        if (s.Local.Exists == false && s.LocalZipped.Exists == false)
-        {
-            await s.LocalZipped.WriteBytes(await client.GetByteArrayAsync(s.Web));
-        }
-        if (s.Local.Exists == false)
-        {
-            using var zipped = s.LocalZipped.OpenRead();
-            using var unzipped = System.IO.File.Create(s.Local.Path);
-            using var unzip = new GZipStream(zipped, CompressionMode.Decompress);
-            unzip.CopyTo(unzipped);
-        }
+        s.Local.Delete();
+        s.LocalZipped.Delete();
+
+        await s.LocalZipped.WriteBytes(await client.GetByteArrayAsync(s.Web));
+
+        using var zipped = s.LocalZipped.OpenRead();
+        using var unzipped = System.IO.File.Create(s.Local.Path);
+        using var unzip = new GZipStream(zipped, CompressionMode.Decompress);
+        unzip.CopyTo(unzipped);
     }));
-    TimeStamp("downloaded and unzipped");
+    TimeStamp("downloaded");
 
     Dictionary<int, string> entriesById = new();
     EpisodeEntry[] entries = Array.Empty<EpisodeEntry>();
@@ -107,43 +103,69 @@ do
     });
     TimeStamp("db built");
 
+    var showsDirectory = storage / "shows";
+    showsDirectory.Create();
+
+    var shows = entries.AsParallel().GroupBy(m => m.SeriesId).Where(g => entriesById.ContainsKey(g.Key)).Select(g => new Show(
+        Id: g.Key,
+        Name: entriesById[g.Key],
+        Episodes: g
+            .GroupBy(g => g.Season)
+            .Select(s => s
+                .Where(e => entriesById.ContainsKey(e.EpisodeId))
+                .Select(e => entriesById[e.EpisodeId])
+                .ToArray()
+            )
+            .ToArray()
+    )).Where(s => s.Episodes.Any() && s.Episodes[0].Length > 1).ToArray();
+
+    TimeStamp("shows generated");
+
+    Parallel.ForEach(shows, new ParallelOptions { MaxDegreeOfParallelism = 64 }, show =>
+    {
+        var characters = Path.GetInvalidFileNameChars().Append('-').Append(' ').ToArray();
+        var safefilename = string.Join(' ', show.Name.Split(characters, StringSplitOptions.RemoveEmptyEntries));
+        var file = showsDirectory / Filename.From(safefilename, "json");
+        file.WriteAsJson(show.Episodes);
+    });
+
+    TimeStamp("shows stored");
+
+    await Notify(stringbuilder.ToString());
     stopwatch.Stop();
+    stringbuilder = new StringBuilder();
 }
 while (await timer.WaitForNextTickAsync());
 
 void TimeStamp(string description)
 {
-    if(stopwatch.IsRunning == false)
+    if (stopwatch.IsRunning == false)
     {
         Console.WriteLine(description);
     }
     else
     {
-        Console.WriteLine($"{description} took {stopwatch.Elapsed.Humanize()}");
+        var line = $"{description} in {stopwatch.Elapsed.Humanize()}";
+        Console.WriteLine(line);
+        stringbuilder.AppendLine(line);
     }
     stopwatch.Restart();
 }
 
-//async Task Notify(Entry entry, Conesoft.Files.File? image)
-//{
-//    var title = entry.Name;
-//    var message = $"from: {entry.Feed}";
-//    var url = entry.Url;
-//    var imageUrl = image != null ? $"https://kontrol.conesoft.net/content/feeds/thumbnail/{image.Name}" : "";
+async Task Notify(string message)
+{
+    var title = "Poll IMDb Shows";
 
-//    var query = new QueryBuilder
-//    {
-//        { "token", conesoftSecret },
-//        { "title", title },
-//        { "message", message },
-//        { "url", url }
-//    };
-//    if (image != null)
-//    {
-//        query.Add("imageUrl", imageUrl);
-//    }
+    var query = new QueryBuilder
+    {
+        { "token", conesoftSecret! },
+        { "title", title },
+        { "message", message }
+    };
 
-//    await new HttpClient().GetAsync($@"https://conesoft.net/notify" + query.ToQueryString());
-//}
+    await new HttpClient().GetAsync($@"https://conesoft.net/notify" + query.ToQueryString());
+}
+
+record Show(int Id, string Name, string[][] Episodes);
 
 internal record EpisodeEntry(int EpisodeId, int SeriesId, int Season, int Episode);
