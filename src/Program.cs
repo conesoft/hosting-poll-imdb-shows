@@ -8,132 +8,191 @@ using System.Text;
 var configuration = new ConfigurationBuilder().AddJsonFile(Conesoft.Hosting.Host.GlobalSettings.Path).Build();
 var conesoftSecret = configuration["conesoft:secret"] ?? throw new Exception("Conesoft Secret not found in Configuration");
 
-var client = new HttpClient();
 var stopwatch = new Stopwatch();
 var stringbuilder = new StringBuilder();
 
 var timer = new PeriodicTimer(TimeSpan.FromHours(6));
+//var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
 
 var settings = Conesoft.Hosting.Host.LocalSettings;
 var storage = Conesoft.Hosting.Host.GlobalStorage / "FromSources" / "IMDb";
 
-var webSources = new[]
-{
-    "https://datasets.imdbws.com/title.basics.tsv.gz",
-    "https://datasets.imdbws.com/title.episode.tsv.gz"
-};
+Dictionary<int, Show> shows = [];
 
 do
 {
     TimeStamp("beginning downloads");
-    var sources = webSources.Select(s => new
+
+    Dictionary<int, string> entriesById = [];
+    List<EpisodeEntry> entries = [];
+
+    await Task.WhenAll(Task.Run(async () =>
     {
-        Web = s,
-        LocalZipped = storage / Filename.FromExtended(new Uri(s).AbsolutePath),
-        Local = storage / Filename.FromExtended(new Uri(s).AbsolutePath.Replace(".gz", ""))
-    });
+        var client = new HttpClient();
+        var bytes = await client.GetByteArrayAsync("https://datasets.imdbws.com/title.basics.tsv.gz");
+        using var zipped = new MemoryStream(bytes);
+        using var stream = new GZipStream(zipped, CompressionMode.Decompress);
+        var reader = new StreamReader(stream);
 
-    await Task.WhenAll(sources.Select(async s =>
-    {
-        s.Local.Parent.Create();
-
-        s.Local.Delete();
-        s.LocalZipped.Delete();
-
-        await s.LocalZipped.WriteBytes(await client.GetByteArrayAsync(s.Web));
-
-        using var zipped = s.LocalZipped.OpenRead();
-        using var unzipped = System.IO.File.Create(s.Local.Path);
-        using var unzip = new GZipStream(zipped, CompressionMode.Decompress);
-        unzip.CopyTo(unzipped);
-    }));
-    TimeStamp("downloaded");
-
-    Dictionary<int, string> entriesById = new();
-    EpisodeEntry[] entries = Array.Empty<EpisodeEntry>();
-
-    Parallel.Invoke(() =>
-    {
-        var basics = sources.First(s => s.Web.Contains("title.basics.tsv"));
-        foreach (var line in System.IO.File.ReadLines(basics.Local.Path).Skip(1))
+        string? line = reader.ReadLine(); // skip
+        while ((line = reader.ReadLine()) != null)
         {
-            var _line = line.AsSpan();
-            var to1 = _line.IndexOf('\t');
-            var to2 = _line[(to1 + 1)..].IndexOf('\t') + 1 + to1;
-            var to3 = _line[(to2 + 1)..].IndexOf('\t') + 1 + to2;
-            //var to4 = _line[(to3 + 1)..].IndexOf('\t') + 1 + to3;
-            //var to5 = _line[(to4 + 1)..].IndexOf('\t') + 1 + to4;
-            //var to6 = _line[(to5 + 1)..].IndexOf('\t') + 1 + to5;
-            //var to7 = _line[(to6 + 1)..].IndexOf('\t') + 1 + to6;
-            //var to8 = _line[(to7 + 1)..].IndexOf('\t') + 1 + to7;
-            var s0 = _line[..to1];
-            var s1 = _line[(to1 + 1)..to2];
-            var s2 = _line[(to2 + 1)..to3];
-            //var s3 = _line[(to3 + 1)..to4];
-            //var s4 = _line[(to4 + 1)..to5];
-            //var s5 = _line[(to5 + 1)..to6];
-            //var s6 = _line[(to6 + 1)..to7];
-            //var s7 = _line[(to7 + 1)..to8];
-            //var s8 = _line[(to8 + 1)..];
+            Process(line!);
+        }
+
+        void Process(ReadOnlySpan<char> line)
+        {
+            var to1 = line.IndexOf('\t');
+            var to2 = line[(to1 + 1)..].IndexOf('\t') + 1 + to1;
+            var to3 = line[(to2 + 1)..].IndexOf('\t') + 1 + to2;
+            //var to4 = line[(to3 + 1)..].IndexOf('\t') + 1 + to3;
+            //var to5 = line[(to4 + 1)..].IndexOf('\t') + 1 + to4;
+            //var to6 = line[(to5 + 1)..].IndexOf('\t') + 1 + to5;
+            //var to7 = line[(to6 + 1)..].IndexOf('\t') + 1 + to6;
+            //var to8 = line[(to7 + 1)..].IndexOf('\t') + 1 + to7;
+            var s0 = line[..to1];
+            var s1 = line[(to1 + 1)..to2];
+            var s2 = line[(to2 + 1)..to3];
+            //var s3 = line[(to3 + 1)..to4];
+            //var s4 = line[(to4 + 1)..to5];
+            //var s5 = line[(to5 + 1)..to6];
+            //var s6 = line[(to6 + 1)..to7];
+            //var s7 = line[(to7 + 1)..to8];
+            //var s8 = line[(to8 + 1)..];
             if (s1.SequenceEqual("tvEpisode") || s1.SequenceEqual("tvSeries"))
             {
                 entriesById.Add(int.Parse(s0[2..]), s2.ToString());
             }
         }
-    }, () =>
+    }), Task.Run(async () =>
     {
-        var episodes = sources.First(s => s.Web.Contains("title.episode.tsv"));
-        entries = System.IO.File.ReadLines(episodes.Local.Path).Skip(1).Select(line =>
+        var client = new HttpClient();
+        var bytes = await client.GetByteArrayAsync("https://datasets.imdbws.com/title.episode.tsv.gz");
+        using var zipped = new MemoryStream(bytes);
+        using var stream = new GZipStream(zipped, CompressionMode.Decompress);
+        var reader = new StreamReader(stream);
+        string? line = reader.ReadLine(); // skip
+        while ((line = reader.ReadLine()) != null)
         {
-            var _line = line.AsSpan();
-            var to1 = _line.IndexOf('\t');
-            var to2 = _line[(to1 + 1)..].IndexOf('\t') + 1 + to1;
-            var to3 = _line[(to2 + 1)..].IndexOf('\t') + 1 + to2;
-            var s0 = _line[..to1];
-            var s1 = _line[(to1 + 1)..to2];
-            var s2 = _line[(to2 + 1)..to3];
-            var s3 = _line[(to3 + 1)..];
-            return new EpisodeEntry(
+            Process(line!);
+        }
+
+        void Process(ReadOnlySpan<char> line)
+        {
+            var to1 = line.IndexOf('\t');
+            var to2 = line[(to1 + 1)..].IndexOf('\t') + 1 + to1;
+            var to3 = line[(to2 + 1)..].IndexOf('\t') + 1 + to2;
+            var s0 = line[..to1];
+            var s1 = line[(to1 + 1)..to2];
+            var s2 = line[(to2 + 1)..to3];
+            var s3 = line[(to3 + 1)..];
+            entries.Add(new EpisodeEntry(
                 EpisodeId: int.Parse(s0[2..]),
                 SeriesId: int.Parse(s1[2..]),
                 Season: int.TryParse(s2, out var season) ? season : int.MaxValue,
                 Episode: int.TryParse(s3, out var episode) ? episode : int.MaxValue
-            );
-        }).ToArray();
-    });
+            ));
+        }
+    }));
     TimeStamp("db built");
 
     var showsDirectory = storage / "shows";
     showsDirectory.Create();
 
-    var shows = entries.AsParallel().GroupBy(m => m.SeriesId).Where(g => entriesById.ContainsKey(g.Key)).Select(g => new Show(
+    var newshows = entries.AsParallel().GroupBy(m => m.SeriesId).Where(g => entriesById.ContainsKey(g.Key)).Select(g => new Show(
         Id: g.Key,
         Name: entriesById[g.Key],
         Episodes: g
             .GroupBy(g => g.Season)
+            .OrderBy(g => g.Key)
             .Select(s => s
                 .Where(e => entriesById.ContainsKey(e.EpisodeId))
+                .OrderBy(e => e.Episode)
                 .Select(e => entriesById[e.EpisodeId])
                 .ToArray()
             )
             .ToArray()
-    )).Where(s => s.Episodes.Any() && s.Episodes[0].Length > 1).ToArray();
+    )).Where(s => s.Episodes.Length != 0 && s.Episodes[0].Length > 1).ToArray();
 
-    TimeStamp("shows generated");
+    TimeStamp($"{newshows.Length} shows found");
 
-    Parallel.ForEach(shows, new ParallelOptions { MaxDegreeOfParallelism = 64 }, show =>
+    int saved = 0;
+    int skipped = 0;
+
+    Parallel.ForEach(newshows, parallelOptions: new() { MaxDegreeOfParallelism = 1024 }, show =>
     {
-        var characters = Path.GetInvalidFileNameChars().Append('-').Append(' ').ToArray();
-        var safefilename = string.Join(' ', show.Name.Split(characters, StringSplitOptions.RemoveEmptyEntries));
-        var file = showsDirectory / Filename.From(safefilename, "json");
-        file.WriteAsJson(show.Episodes);
+        if(shows.TryGetValue(show.Id, out Show? oldshow))
+        {
+            if (oldshow.Name != show.Name)
+            {
+                goto notequal;
+            }
+            if (oldshow.Episodes.Length != show.Episodes.Length)
+            {
+                goto notequal;
+            }
+            for(var i = 0; i < oldshow.Episodes.Length; i++)
+            {
+                var oldseason = oldshow.Episodes[i];
+                var season = show.Episodes[i];
+
+                if(oldseason.Length != season.Length)
+                {
+                    goto notequal;
+                }
+
+                for (var ii = 0; ii < oldseason.Length; ii++)
+                {
+                    var oldepisode = oldseason[ii];
+                    var episode = season[ii];
+
+                    if(oldepisode != episode)
+                    {
+                        goto notequal;
+                    }
+                }
+            }
+
+            Interlocked.Increment(ref skipped);
+            return;
+        }
+
+        notequal:
+
+        var invalidcharacters = Path.GetInvalidFileNameChars().Append('-').Append(' ').ToArray();
+        var safename = string.Join(' ', show.Name.Split(invalidcharacters, StringSplitOptions.RemoveEmptyEntries));
+
+        var file = showsDirectory / Filename.From($"{safename} - {show.Id}", "json");
+
+        var output = $"[{string.Join(", ", show.Episodes.Select(season =>
+        {
+            return $"{Environment.NewLine}\t[{Environment.NewLine}{string.Join(", " + Environment.NewLine, season.Select(episode => $"\t\t\"{episode.Replace("\"", "\\\"")}\""))}{Environment.NewLine}\t]";
+        }))}{Environment.NewLine}]";
+
+        Interlocked.Increment(ref saved);
+
+        file.WriteText(output);
     });
 
-    TimeStamp("shows stored");
+    shows = newshows.ToDictionary(s => s.Id);
+
+    TimeStamp($"{saved} updated shows stored");
 
     await Notify(stringbuilder.ToString());
+
+    TimeStamp("notified");
+
+    // cleanup
+    stringbuilder = new();
+    entries = [];
+    entriesById = [];
+    GC.Collect(2, GCCollectionMode.Aggressive, true, true);
+
+    TimeStamp("cleaned up");
+
+    Console.WriteLine("waiting for next tick");
     stopwatch.Stop();
-    stringbuilder = new StringBuilder();
+    Console.WriteLine();
 }
 while (await timer.WaitForNextTickAsync());
 
@@ -145,7 +204,7 @@ void TimeStamp(string description)
     }
     else
     {
-        var line = $"{description} in {stopwatch.Elapsed.Humanize()}";
+        var line = $"{description} in {stopwatch.Elapsed.Humanize(precision: 2)}";
         Console.WriteLine(line);
         stringbuilder.AppendLine(line);
     }
