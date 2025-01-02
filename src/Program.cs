@@ -13,7 +13,6 @@ var conesoftSecret = configuration["conesoft:secret"] ?? throw new Exception("Co
 
 var builder = Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder(args);
 builder.Services
-    .AddLoggingToHost()
     .AddPeriodicGarbageCollection(TimeSpan.FromMinutes(5))
     .AddSingleton(new Notification(conesoftSecret));
 
