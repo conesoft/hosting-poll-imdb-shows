@@ -2,11 +2,10 @@
   "profiles": {
     "Poll IMDb Shows - Service": {
       "commandName": "Project",
-      "launchBrowser": true,
+      "dotnetRunMessages": "true",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
-      },
-      "applicationUrl": "https://localhost:54884;http://localhost:54885"
+        "DOTNET_ENVIRONMENT": "Development"
+      }
     }
   }
 }

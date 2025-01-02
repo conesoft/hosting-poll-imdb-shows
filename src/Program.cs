@@ -1,35 +1,37 @@
 ﻿using Conesoft.Files;
 using Conesoft.Hosting;
+using Conesoft.Notifications;
 using Conesoft.Services.PollImdbShows;
-using Conesoft.Services.PollImdbShows.Helpers;
 using Humanizer;
 using Serilog;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Text;
 
-var configuration = new ConfigurationBuilder().AddJsonFile(Conesoft.Hosting.Host.GlobalSettings.Path).Build();
-var conesoftSecret = configuration["conesoft:secret"] ?? throw new Exception("Conesoft Secret not found in Configuration");
+var builder = Host.CreateApplicationBuilder(args);
 
-var builder = Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder(args);
-builder.Services
-    .AddPeriodicGarbageCollection(TimeSpan.FromMinutes(5))
-    .AddSingleton(new Notification(conesoftSecret));
+builder
+    .AddHostConfigurationFiles()
+    .AddHostEnvironmentInfo()
+    .AddLoggingService()
+    .AddNotificationService()
+    ;
 
 var host = builder.Build();
 
-await host.StartAsync();
+using var lifetime = await host.StartConsoleAsync();
 
-var notification = host.Services.GetRequiredService<Notification>();
+var configuration = builder.Configuration;
+var environment = host.Services.GetRequiredService<HostEnvironment>();
+var notifier = host.Services.GetRequiredService<Notifier>();
 
 var stopwatch = new Stopwatch();
 var stringbuilder = new StringBuilder();
 
 var timer = new PeriodicTimer(TimeSpan.FromHours(6));
-//var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
 
 
-var storage = Conesoft.Hosting.Host.GlobalStorage / "FromSources" / "IMDb";
+var storage = environment.Global.Storage / "FromSources" / "IMDb";
 Log.Information("IMDb storage: {storage}", storage);
 
 do
@@ -194,7 +196,7 @@ do
 
         TimeStamp($"{saved} updated shows stored");
 
-        await notification.Notify(stringbuilder.ToString());
+        await notifier.Notify(title: "Poll IMDb Shows", stringbuilder.ToString());
 
         TimeStamp("notified");
 
@@ -209,18 +211,18 @@ do
         stopwatch.Stop();
     }
 }
-while (await timer.WaitForNextTickAsync());
+while (await timer.WaitForNextTickAsync(lifetime.CancellationToken).ReturnFalseWhenCancelled());
 
 void TimeStamp(string description)
 {
     if (stopwatch.IsRunning == false)
     {
-        Console.WriteLine(description);
+        Log.Information(description);
     }
     else
     {
         var line = $"{description} in {stopwatch.Elapsed.Humanize(precision: 2)}";
-        Console.WriteLine(line);
+        Log.Information(line);
         stringbuilder.AppendLine(line);
     }
     stopwatch.Restart();
