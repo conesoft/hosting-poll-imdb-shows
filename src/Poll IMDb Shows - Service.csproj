@@ -17,8 +17,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Conesoft.Files" Version="3.0.5" />
-    <PackageReference Include="Conesoft.Hosting" Version="3.3.7" />
+    <PackageReference Include="Conesoft.Files" Version="3.0.7" />
+    <PackageReference Include="Conesoft.Hosting" Version="3.3.9" />
     <PackageReference Include="Humanizer.Core" Version="2.14.1" />
   </ItemGroup>
 
