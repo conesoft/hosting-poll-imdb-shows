@@ -7,19 +7,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
-
+	
   <ItemGroup>
-    <Content Remove="Properties\-launchSettings.json" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="Properties\PublishProfiles\Deploy.pubxml.user" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Conesoft.Files" Version="3.0.7" />
-    <PackageReference Include="Conesoft.Hosting" Version="3.3.9" />
-    <PackageReference Include="Humanizer.Core" Version="2.14.1" />
+    <PackageReference Include="Conesoft.Hosting" Version="3.4.0" />
   </ItemGroup>
 
 </Project>
