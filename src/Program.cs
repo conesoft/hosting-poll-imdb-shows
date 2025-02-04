@@ -36,8 +36,13 @@ Log.Information("IMDb storage: {storage}", storage);
 
 do
 {
+    // delay by an hour if it already ran recently
+    if((storage / "shows").Info.LastWriteTimeUtc + TimeSpan.FromHours(1) > DateTime.UtcNow)
     {
+        await Task.Delay(TimeSpan.FromHours(1));
+    }
 
+    {
         TimeStamp("beginning downloads");
 
         Dictionary<int, Show> shows = [];

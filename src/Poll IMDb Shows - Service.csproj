@@ -9,7 +9,7 @@
   </PropertyGroup>
 	
   <ItemGroup>
-    <PackageReference Include="Conesoft.Hosting" Version="3.4.0" />
+    <PackageReference Include="Conesoft.Hosting" Version="3.4.10" />
   </ItemGroup>
 
 </Project>
