@@ -9,7 +9,7 @@ using System.Text;
 
 namespace Conesoft.Services.PollImdbShows;
 
-public class Service(HostEnvironment environment, Notifier notifier, IHttpClientFactory factory) : PeriodicTask(TimeSpan.FromSeconds(45))
+public class Service(HostEnvironment environment, Notifier notifier, IHttpClientFactory factory) : PeriodicTask(TimeSpan.FromHours(6))
 {
     readonly Files.Directory storage = environment.Global.Storage / "content" / "tv shows";
     Dictionary<int, Show> shows = [];
