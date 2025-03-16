@@ -18,18 +18,18 @@ public class Service(HostEnvironment environment, Notifier notifier, IHttpClient
     {
         var stopwatch = new Stopwatch();
         var stringbuilder = new StringBuilder();
-        stopwatch.Start();
-        storage.Create();
 
         await DelayIfRecentlyRun(storage, TimeSpan.FromHours(1));
 
         Log.Information("beginning downloads");
+        stopwatch.Start();
+        storage.Create();
 
         var loadShows = Task.Run(LoadShows);
         var loadEpisodes = Task.Run(LoadEpisodes);
         var entriesById = await loadShows;
         var entries = await loadEpisodes;
-        TimeStamp("db built");
+        TimeStamp("entries db built", entries.Count);
 
         var newshows = CreateShowsFromEntries(entries, entriesById);
         TimeStamp($"shows found", newshows.Length);
@@ -42,13 +42,13 @@ public class Service(HostEnvironment environment, Notifier notifier, IHttpClient
 
         void TimeStamp(string description, int? count = null)
         {
-            Log.Information("'{count}{space}{description}' done in {time}", count.HasValue ? count : "", count.HasValue ? " " : "", description, stopwatch.Elapsed.Humanize(precision: 2));
+            Log.Information("'{count} {description}' done in {time}", count, description, stopwatch.Elapsed.Humanize(precision: 2));
             stringbuilder.AppendLine($"{(count.HasValue ? count + " " : "")}{description} in {stopwatch.Elapsed.Humanize(precision: 1)}");
             stopwatch.Restart();
         }
     }
 
-    Task DelayIfRecentlyRun(Files.Directory storage, TimeSpan delay) => storage.Info.LastWriteTimeUtc + delay > DateTime.UtcNow && environment.IsInHostedEnvironment ? Task.Delay(TimeSpan.FromHours(1)) : Task.CompletedTask;
+    Task DelayIfRecentlyRun(Files.Directory storage, TimeSpan delay) => storage.Exists && storage.Files.Any() && storage.Info.LastWriteTimeUtc + delay > DateTime.UtcNow && environment.IsInHostedEnvironment ? Task.Delay(TimeSpan.FromHours(1)) : Task.CompletedTask;
 
     async Task<Dictionary<int, string>> LoadShows()
     {
